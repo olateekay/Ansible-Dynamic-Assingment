@@ -117,3 +117,111 @@ Now it is time to create a role for MySQL database - it should install the MySQL
 
 Download Mysql Ansible Role You can browse available community roles here
 We will be using a MySQL role developed by geerlingguy.
+
+Hint: To preserve your your GitHub in actual state after you install a new role - make a commit and push to master your ‘ansible-config-mgt’ directory. Of course you must have git installed and configured on Jenkins-Ansible server and, for more convenient work with codes, you can configure Visual Studio Code to work with this directory. In this case, you will no longer need webhook and Jenkins jobs to update your codes on Jenkins-Ansible server, so you can disable it - we will be using Jenkins later for a better purpose.
+
+On Jenkins-Ansible server make sure that git is installed with git --version, then go to ‘ansible-config-mgt’ directory and run
+
+git init
+git pull https://github.com/<your-name>/ansible-config-mgt.git
+git remote add origin https://github.com/<your-name>/ansible-config-mgt.git
+
+# config
+git config --global user.email "you@example.com"
+git config --global user.name "Your Name"
+
+# A fix to this error message
+# error: The following untracked working tree files would be overwritten by merge...
+
+git commit -m "your message"
+git pull origin master --allow-unrelated-histories
+git add -A .
+git stash
+sudo git pull origin master --allow-unrelated-histories
+
+# merge the conflicts
+sudo git add .
+
+git push --set-upstream origin master
+
+git checkout -b roles-feature
+git branch -vv
+Inside roles directory create your new MySQL role with ansible-galaxy install geerlingguy.mysql and rename the folder to mysql
+
+mv geerlingguy.mysql/ mysql
+
+Read README.md file, and edit roles configuration to use correct credentials for MySQL required for the tooling website.
+
+Now it is time to upload the changes into your GitHub:
+
+git add .
+git commit -m "Commit new role files into GitHub"
+git push --set-upstream origin roles-feature
+Now, if you are satisfied with your codes, you can create a Pull Request and merge it to main branch on GitHub.
+
+Role for Load Balancer
+We want to be able to choose which Load Balancer to use, Nginx or Apache, so we need to have two roles respectively:
+
+Nginx
+
+Apache
+
+Decide if you want to develop your own roles (apache), or find available ones from the community(nginx).
+
+For the apache role. I cloned the work of Shubham Rasal at this https://github.com/ShubhamRasal/ansible-playbooks.git, as I couldn't find a exclusive apache role on the ansible-galaxy.
+
+Check afterwards by running:
+$ ansible-galaxy role list
+
+Output
+- myapache, (unknown version)
+- webserver, (unknown version)
+- mysql, (unknown version)
+- nginx, 0.20.0
+Update both static-assignment and site.yml files to refer the roles Important Hints:
+Since you cannot use both Nginx and Apache load balancer, you need to add a condition to enable either one - this is where you can make use of variables.
+
+Declare a variable in defaults/main.yml file inside the Nginx and Apache roles. Name each variables enable_nginx_lb and enable_apache_lb respectively.
+Set both values to false like this: enable_nginx_lb: false enable_apache_lb: false.
+Declare another variable in both roles load_balancer_is_required and set its value to false as well Update both assignment and site.yml files respectively loadbalancers.yml file
+- hosts: lb
+  roles:
+    - { role: nginx, when: enable_nginx_lb and load_balancer_is_required }
+    - { role: apache, when: enable_apache_lb and load_balancer_is_required }
+site.yml file
+
+     - name: Loadbalancers assignment
+       hosts: lb
+         - import_playbook: ../static-assignments/loadbalancers.yml
+        when: load_balancer_is_required 
+Now you can make use of env-vars\uat.yml file to define which loadbalancer to use in UAT environment by setting respective environmental variable to true. We'll activate load balancer, and enable nginx by setting these in the respective environment’s env-vars file.
+
+enable_nginx_lb: true
+load_balancer_is_required: true
+The same must work with apache LB, so we can switch it by setting respective environmental variable to true and other to false.
+
+To test this, you can update inventory for each environment and run Ansible against each environment.
+
+$ ansible-playbook -i /home/ubuntu/ansible-artifact/inventory/dev /home/ubuntu/ansible-artifact/playbooks/site.yml
+
+```
+
+[DEPRECATION WARNING]: The TRANSFORM_INVALID_GROUP_CHARS settings is set to allow bad characters in group names by default, this will change, but still be user 
+configurable on deprecation. This feature will be removed in version 2.10. Deprecation warnings can be disabled by setting deprecation_warnings=False in 
+ansible.cfg.
+[WARNING]: Invalid characters were found in group names but not replaced, use -vvvv to see details
+PLAY [Ensure to include dynamic variables] ************************************************************************************************************************
+TASK [Gathering Facts] ********************************************************************************************************************************************
+ok: [mysql]
+ok: [file-storage]
+ok: [webserver1]
+ok: [webserver2]
+ok: [nginx]
+TASK [collate variables from env specific file, if it exists] *****************************************************************************************************
+PLAY RECAP ********************************************************************************************************************************************************
+file-storage               : ok=1    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+mysql                      : ok=1    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+nginx                      : ok=1    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+webserver1                 : ok=1    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+webserver2                 : ok=1    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0  
+```
